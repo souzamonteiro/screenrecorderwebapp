@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a2a6c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Screen Recorder</title>
+    <link rel="icon" href="icons/favicon.ico" type="image/x-icon">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-152x152.png">
+
+    <!-- CSS Libraries -->
+    <link rel="stylesheet" href="css/fontawesome.min.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            width: 480px;
+            max-width: calc(100% - 40px);
+            overflow: hidden;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            color: white;
+        }
+
+        #record {
+            background-color: #2a9d8f;
+        }
+
+        #pause {
+            background-color: #264653;
+        }
+
+        #stop {
+            background-color: #e63946;
+        }
+
+        #save {
+            background-color: #f4a261;
+        }
+
+        button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        button:active {
+            transform: translateY(-1px);
+        }
+
+        #status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .recording {
+            background-color: #ff7b7b;
+        }
+
+        .paused {
+            background-color: #ffeaa7;
+        }
+
+        .saved {
+            background-color: #a2ff98;
+        }
+
+        .preview {
+            margin-top: 20px;
+            width: 100%;
+            height: 200px;
+            background-color: #f0f0f0;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .file-info button {
+            margin-top: 10px;
+            padding: 8px 15px;
+            background-color: #457b9d;
+            border-radius: 4px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Audio controls layout improvements */
+        .audio-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .audio-controls label {
+            flex: 0 0 auto;
+            margin-right: 6px;
+            white-space: nowrap;
+        }
+
+        .audio-controls select {
+            flex: 1 1 160px;
+            min-width: 140px;
+            max-width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+        }
+
+        #mic-devices {
+            flex: 2 1 220px;
+            min-width: 180px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .checkbox-container label {
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Screen Recorder</h1>
+        <div class="button-container">
+            <button id="record">Record</button>
+            <button id="pause" disabled>Pause</button>
+            <button id="stop" disabled>Stop</button>
+        </div>
+        <div class="audio-controls" style="margin:12px 0; display:flex; gap:8px; align-items:center;">
+            <label for="audio-source" style="font-size:14px; color:#333;">Audio:</label>
+            <select id="audio-source" style="flex:1; padding:8px; border-radius:6px;">
+                <option value="none">None</option>
+                <option value="microphone">Microphone only</option>
+                <option value="system">System/Tab audio only</option>
+                <option value="mic+system">Microphone + System</option>
+            </select>
+            <select id="mic-devices" class="hidden" style="padding:8px; border-radius:6px;"></select>
+        </div>
+        <div style="margin:12px 0; display:flex; gap:8px; align-items:center;">
+            <div class="checkbox-container" style="margin: 0;">
+                <input type="checkbox" id="rnnoise-toggle">
+                <label for="rnnoise-toggle" style="font-size:14px; color:#333; margin-bottom: 0;">Enable Noise Filtering (RNNoise)</label>
+            </div>
+        </div>
+        <div id="status">Click Record to start</div>
+        <div class="preview">
+            <video id="preview" class="hidden"></video>
+        </div>
+        <div class="file-info hidden" id="file-info">
+            <p>Recording saved as <span id="file-name"></span></p>
+        </div>
+
+        <div style="margin-top: 40px; padding: 20px; text-align: center; color: var(--dark-gray); font-size: 14px; border-top: 1px solid #e0e0e0;">
+            <p style="margin-bottom: 10px;">
+                &copy; 2026 Roberto Luiz Souza Monteiro. All rights reserved.
+            </p>
+            <p style="margin-bottom: 10px;">
+                <a href="https://github.com/souzamonteiro/screenrecorder.git" 
+                    target="_blank"
+                    style="color: var(--primary-color); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
+                    onmouseover="this.style.textDecoration='underline'"
+                    onmouseout="this.style.textDecoration='none'">
+                    <i class="fa-brands fa-github"></i>
+                    View source code on GitHub
+                </a>
+            </p>
+            <p style="font-size: 12px; opacity: 0.8;">
+                This project is licensed under the Apache 2.0 License.
+            </p>
+        </div>
+    </div>
+
+    <!-- <script src="libs/rnnoise.js"></script> -->
+    <script type="module">
+        // Import the RNNoise module
+        import RNNoiseModule from './libs/rnnoise.js';
+        
+        // Make it globally available
+        window.RNNoiseModule = RNNoiseModule;
+    </script>
+
+    <script>
+        // DOM elements
+        const recordButton = document.getElementById('record');
+        const pauseButton = document.getElementById('pause');
+        const stopButton = document.getElementById('stop');
+        const saveButton = document.getElementById('save');
+        const statusDiv = document.getElementById('status');
+        const previewVideo = document.getElementById('preview');
+        const fileInfoDiv = document.getElementById('file-info');
+        const fileNameSpan = document.getElementById('file-name');
+        const downloadButton = document.getElementById('download');
+        const audioSourceSelect = document.getElementById('audio-source');
+        const micDevicesSelect = document.getElementById('mic-devices');
+        const rnnoiseToggle = document.getElementById('rnnoise-toggle');
+
+        // Global variables
+        let recordedChunks = [];
+        let mediaRecorder = null;
+        let stream = null;
+        let micStream = null;
+        let displayStreamRef = null;
+        let audioCtx = null;
+        let audioDestination = null;
+        let recordingStartTime = 0;
+        let recordingDuration = 0;
+        let rnnoiseProcessor = null;
+        let scriptNode = null;
+
+        // Setup RNNoise processor for noise reduction
+        async function setupRNNoiseProcessor(sourceNode, destinationNode) {
+            try {
+                // Wait for RNNoise module to be available
+                if (typeof window.RNNoiseModule === 'undefined') {
+                    console.warn('RNNoise module not loaded yet');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    if (typeof window.RNNoiseModule === 'undefined') {
+                        console.warn('RNNoise module still not available');
+                        return false;
+                    }
+                }
+
+                // Get the module
+                const RNNoiseModule = window.RNNoiseModule;
+                
+                // Wait for the module to be ready
+                if (typeof RNNoiseModule.ready !== 'undefined') {
+                    await RNNoiseModule.ready;
+                }
+
+                // Initialize RNNoise state
+                let denoiserState = null;
+                
+                try {
+                    if (RNNoiseModule._rnnoise_init) {
+                        RNNoiseModule._rnnoise_init();
+                    }
+                    if (RNNoiseModule._rnnoise_create) {
+                        denoiserState = RNNoiseModule._rnnoise_create();
+                    } else {
+                        console.warn('RNNoise create function not found');
+                        return false;
+                    }
+                } catch (err) {
+                    console.warn('Error initializing RNNoise:', err);
+                    return false;
+                }
+
+                // Create a ScriptProcessorNode for real-time audio processing
+                const bufferSize = 512;
+                scriptNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+
+                // Store references for cleanup
+                rnnoiseProcessor = { state: denoiserState, module: RNNoiseModule };
+
+                // Process audio frames
+                scriptNode.onaudioprocess = (event) => {
+                    const input = event.inputBuffer.getChannelData(0);
+                    const output = event.outputBuffer.getChannelData(0);
+                    
+                    try {
+                        if (RNNoiseModule._rnnoise_process_frame && denoiserState) {
+                            RNNoiseModule._rnnoise_process_frame(denoiserState, input);
+                        }
+                        
+                        for (let i = 0; i < input.length; i++) {
+                            output[i] = input[i];
+                        }
+                    } catch (err) {
+                        console.warn('Error during denoising:', err);
+                        for (let i = 0; i < input.length; i++) {
+                            output[i] = input[i];
+                        }
+                    }
+                };
+
+                sourceNode.connect(scriptNode);
+                scriptNode.connect(destinationNode);
+                
+                return true;
+            } catch (error) {
+                console.error('Failed to setup RNNoise:', error);
+                return false;
+            }
+        }
+
+        // Populate microphone devices
+        async function populateMicDevices() {
+            try {
+                // First enumerate devices
+                let devices = await navigator.mediaDevices.enumerateDevices();
+                let mics = devices.filter(d => d.kind === 'audioinput');
+
+                // If labels are empty (permissions not granted), request audio permission briefly
+                const haveLabels = mics.some(m => m.label && m.label.trim() !== '');
+                if (!haveLabels) {
+                    try {
+                        const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        // stop temporary tracks immediately
+                        tempStream.getTracks().forEach(t => t.stop());
+                        // re-enumerate to get labels
+                        devices = await navigator.mediaDevices.enumerateDevices();
+                        mics = devices.filter(d => d.kind === 'audioinput');
+                    } catch (permErr) {
+                        // user denied or no mic — we'll show fallbacks
+                        console.warn('Permission for microphone not granted:', permErr);
+                    }
+                }
+
+                micDevicesSelect.innerHTML = '';
+                mics.forEach(mic => {
+                    const opt = document.createElement('option');
+                    opt.value = mic.deviceId;
+                    // Use label if available, otherwise show a clear fallback
+                    if (mic.label && mic.label.trim() !== '') {
+                        opt.textContent = mic.label;
+                    } else {
+                        opt.textContent = `Microphone (${mic.deviceId ? mic.deviceId.slice(0,6) : 'unknown'})`;
+                    }
+                    micDevicesSelect.appendChild(opt);
+                });
+                if (mics.length > 0) {
+                    micDevicesSelect.classList.remove('hidden');
+                } else {
+                    micDevicesSelect.classList.add('hidden');
+                }
+            } catch (err) {
+                console.warn('Could not enumerate devices:', err);
+            }
+        }
+
+        // Get user media (screen, audio)
+        async function getScreenStream() {
+            try {
+                // Determine audio selection
+                const audioChoice = audioSourceSelect ? audioSourceSelect.value : 'none';
+                const needsSystem = (audioChoice === 'system' || audioChoice === 'mic+system');
+                const needsMic = (audioChoice === 'microphone' || audioChoice === 'mic+system');
+
+                // Request display stream; only request audio if system audio is wanted
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: needsSystem
+                });
+
+                // Try to get microphone audio only if requested
+                micStream = null;
+                if (needsMic) {
+                    try {
+                        const micConstraint = {};
+                        if (micDevicesSelect && micDevicesSelect.value) {
+                            micConstraint.deviceId = { exact: micDevicesSelect.value };
+                        }
+                        micStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraint });
+                    } catch (err) {
+                        micStream = null;
+                        console.warn('Microphone not available or permission denied:', err);
+                    }
+                }
+
+                // Keep a ref to the original display stream so we can stop tracks later
+                displayStreamRef = displayStream;
+
+                // Mix audio sources using Web Audio API to avoid artifacts from multiple audio tracks
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                audioDestination = audioCtx.createMediaStreamDestination();
+
+                // If system/display audio requested and available, connect it
+                if (needsSystem && displayStream.getAudioTracks().length > 0) {
+                    try {
+                        const displayAudioSrc = audioCtx.createMediaStreamSource(new MediaStream(displayStream.getAudioTracks()));
+                        displayAudioSrc.connect(audioDestination);
+                    } catch (err) {
+                        console.warn('Could not create display audio source for mixing:', err);
+                    }
+                }
+
+                // If microphone requested and available, connect it
+                if (micStream && micStream.getAudioTracks().length > 0) {
+                    try {
+                        const micAudioSrc = audioCtx.createMediaStreamSource(new MediaStream(micStream.getAudioTracks()));
+                        
+                        // Apply RNNoise filter if enabled
+                        if (rnnoiseToggle.checked) {
+                            try {
+                                const success = await setupRNNoiseProcessor(micAudioSrc, audioDestination);
+                                if (!success) {
+                                    console.warn('RNNoise setup failed, using unfiltered audio');
+                                    micAudioSrc.connect(audioDestination);
+                                }
+                            } catch (err) {
+                                console.warn('RNNoise setup error, using unfiltered audio:', err);
+                                micAudioSrc.connect(audioDestination);
+                            }
+                        } else {
+                            micAudioSrc.connect(audioDestination);
+                        }
+                    } catch (err) {
+                        console.warn('Could not create mic audio source for mixing:', err);
+                    }
+                }
+
+                // Combine video tracks from display + single mixed audio track from audioDestination
+                const combinedTracks = [ ...displayStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks() ];
+                stream = new MediaStream(combinedTracks);
+
+                // Set up media recorder with higher audio bitrate
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', audioBitsPerSecond: 128000 });
+                
+                // Event handlers
+                mediaRecorder.ondataavailable = handleDataAvailable;
+                mediaRecorder.onstop = handleStop;
+
+                // Start the media recorder
+                mediaRecorder.start();
+
+                // Inform about audio sources
+                if (needsMic && micStream) {
+                    statusDiv.textContent = 'Recording... (including microphone)';
+                } else if (needsSystem && displayStream.getAudioTracks().length > 0) {
+                    statusDiv.textContent = 'Recording... (including system/tab audio)';
+                } else if (needsMic && !micStream && !needsSystem) {
+                    statusDiv.textContent = 'Recording... (microphone requested but not available)';
+                }
+
+                // Start recording time
+                recordingStartTime = Date.now();
+                
+                // Start preview (muted to prevent feedback/microphony)
+                previewVideo.srcObject = stream;
+                previewVideo.muted = true;
+                previewVideo.play();
+                previewVideo.classList.remove('hidden');
+                
+                // Update UI
+                recordButton.disabled = true;
+                pauseButton.disabled = false;
+                stopButton.disabled = false;
+                // preserve any earlier status text (which may include mic/system audio info)
+                if (!statusDiv.textContent || statusDiv.textContent.trim() === 'Click Record to start') {
+                    statusDiv.textContent = 'Recording...';
+                }
+                statusDiv.classList.add('recording');
+                
+            } catch (error) {
+                console.error('Error accessing screen:', error);
+                statusDiv.textContent = 'Error accessing screen. Please try again.';
+            }
+        }
+
+        // Handle data available from media recorder
+        function handleDataAvailable(event) {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        }
+
+        // Stop recording
+        function handleStop() {
+            // Stop all tracks in the recorded stream
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            // Also stop mic stream if we kept a separate reference
+            if (micStream) micStream.getTracks().forEach(track => track.stop());
+            // Stop display stream tracks (video/audio) if we have a ref
+            if (displayStreamRef) displayStreamRef.getTracks().forEach(track => track.stop());
+            // Clean up RNNoise processor
+            if (rnnoiseProcessor) {
+                try { 
+                    if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy && rnnoiseProcessor.state) {
+                        rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state);
+                    }
+                } catch(e){}
+                rnnoiseProcessor = null;
+            }
+            // Clean up script node
+            if (scriptNode) {
+                try {
+                    scriptNode.disconnect();
+                } catch(e){}
+                scriptNode = null;
+            }
+            // Close AudioContext used for mixing
+            if (audioCtx) {
+                try { audioCtx.close(); } catch(e){}
+                audioCtx = null;
+                audioDestination = null;
+            }
+            
+            // Create a blob from recorded chunks
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            
+            // Create a file and URL for download
+            const file = new File([blob], `screen-recording-${new Date().toISOString().slice(0, 19)}.webm`);
+            const url = URL.createObjectURL(blob);
+            
+            // Display file info
+            fileNameSpan.textContent = file.name;
+            fileInfoDiv.classList.remove('hidden');
+            
+            // Set file URL for download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            // Reset UI
+            recordButton.disabled = false;
+            pauseButton.disabled = true;
+            stopButton.disabled = true;
+            statusDiv.textContent = 'Recording saved!';
+            statusDiv.classList.add('saved');
+            // Reset pause button label and classes
+            pauseButton.textContent = 'Pause';
+            statusDiv.classList.remove('recording', 'paused');
+
+            // Reset recorded chunks
+            recordedChunks = [];
+        }
+
+        // Pause recording
+        function pauseRecording() {
+            if (!mediaRecorder) return;
+
+            if (mediaRecorder.state === 'recording') {
+                // Calculate duration paused
+                const pausedDuration = Date.now() - recordingStartTime;
+                recordingDuration += pausedDuration;
+
+                mediaRecorder.pause();
+                statusDiv.textContent = 'Recording paused';
+                statusDiv.classList.remove('recording');
+                statusDiv.classList.add('paused');
+                pauseButton.textContent = 'Resume';
+            } else if (mediaRecorder.state === 'paused') {
+                // Resume recording
+                recordingStartTime = Date.now();
+                mediaRecorder.resume();
+                statusDiv.textContent = 'Recording...';
+                statusDiv.classList.remove('paused');
+                statusDiv.classList.add('recording');
+                pauseButton.textContent = 'Pause';
+            }
+        }
+
+        // Event listeners
+        recordButton.addEventListener('click', async () => {
+            try {
+                await getScreenStream();
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                statusDiv.textContent = 'Error starting recording. Please try again.';
+            }
+        });
+
+        // Show/hide mic device select based on audio choice
+        if (audioSourceSelect) {
+            audioSourceSelect.addEventListener('change', async () => {
+                const val = audioSourceSelect.value;
+                if ((val === 'microphone' || val === 'mic+system')) {
+                    await populateMicDevices();
+                    micDevicesSelect.classList.remove('hidden');
+                } else {
+                    micDevicesSelect.classList.add('hidden');
+                }
+            });
+            // initial populate
+            populateMicDevices();
+        }
+
+        pauseButton.addEventListener('click', pauseRecording);
+
+        stopButton.addEventListener('click', () => {
+            if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+                // Stop recording and fire the onstop event
+                mediaRecorder.stop();
+            }
+        });
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (rnnoiseProcessor) {
+                try { 
+                    if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy && rnnoiseProcessor.state) {
+                        rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state);
+                    }
+                } catch(e){}
+            }
+            if (scriptNode) {
+                try { scriptNode.disconnect(); } catch(e){}
+            }
+            if (audioCtx) {
+                try { audioCtx.close(); } catch(e){}
+            }
+        });
+    </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js')
+            .then(() => console.log('Service Worker successfully registered.'))
+            .catch(err => console.error('Erro SW:', err));
+        }
+    </script>
+</body>
+</html>
