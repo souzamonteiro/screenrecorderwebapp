@@ -1,10 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-    <!-- Monitor body -->
-    <rect x="10" y="20" width="80" height="70" rx="5" fill="#1a2a6c" stroke="white" stroke-width="2"/>
-    <!-- Screen -->
-    <rect x="15" y="25" width="70" height="40" rx="0" fill="#1a2a6c" stroke="white" stroke-width="1"/>
-    <!-- Screen border -->
-    <rect x="16" y="26" width="68" height="38" rx="0" fill="white" stroke="black" stroke-width="1"/>
-    <!-- Recording indicator -->
-    <circle cx="85" cy="30" r="5" fill="#e63946"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Camada_1" data-name="Camada 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+      }
+
+      .cls-2 {
+        fill: #999;
+      }
+
+      .cls-2, .cls-3, .cls-4, .cls-5, .cls-6 {
+        stroke: #000;
+        stroke-linejoin: round;
+      }
+
+      .cls-3 {
+        fill: #fff;
+      }
+
+      .cls-7 {
+        font-family: MyriadPro-Bold, 'Myriad Pro';
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .cls-4 {
+        fill: red;
+      }
+
+      .cls-5 {
+        fill: #e6e6e6;
+      }
+    </style>
+  </defs>
+  <rect class="cls-1" width="512" height="512"/>
+  <rect class="cls-3" x="106" y="106" width="300" height="300" rx="10" ry="10"/>
+  <rect class="cls-5" x="156" y="156" width="200" height="200"/>
+  <rect class="cls-6" x="156" y="156" width="200" height="25"/>
+  <rect class="cls-2" x="331" y="156" width="25" height="25"/>
+  <rect class="cls-2" x="306" y="156" width="25" height="25"/>
+  <rect class="cls-2" x="281" y="156" width="25" height="25"/>
+  <rect class="cls-3" x="311" y="161.58" width="15" height="15"/>
+  <rect class="cls-3" x="286" y="171.58" width="15" height="5"/>
+  <polygon class="cls-3" points="351.56 162.14 350.14 160.72 343.78 167.09 337.41 160.72 336 162.14 342.36 168.5 336 174.86 337.41 176.28 343.78 169.91 350.14 176.28 351.56 174.86 345.19 168.5 351.56 162.14"/>
+  <g>
+    <polygon class="cls-6" points="201.69 244.44 201.69 249.44 201.69 274.44 206.69 274.44 206.69 249.44 226.69 249.44 226.69 244.44 201.69 244.44"/>
+    <polygon class="cls-6" points="310.31 286.44 310.31 281.44 310.31 256.44 305.31 256.44 305.31 281.44 285.31 281.44 285.31 286.44 310.31 286.44"/>
+    <circle class="cls-4" cx="234.19" cy="265.44" r="7.5"/>
+    <text class="cls-7" transform="translate(244.61 273.96)"><tspan x="0" y="0">REC</tspan></text>
+  </g>
 </svg>
