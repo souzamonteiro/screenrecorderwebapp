@@ -3,18 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#1a2a6c">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="mobile-web-app-capable" content="yes">
     <title>Screen Recorder</title>
-    <link rel="icon" href="icons/favicon.ico" type="image/x-icon">
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-152x152.png">
-
-    <!-- CSS Libraries -->
-    <link rel="stylesheet" href="css/fontawesome.min.css">
-    
     <style>
         * {
             margin: 0;
@@ -224,25 +213,6 @@
         <div class="file-info hidden" id="file-info">
             <p>Recording saved as <span id="file-name"></span></p>
         </div>
-
-        <div style="margin-top: 40px; padding: 20px; text-align: center; color: var(--dark-gray); font-size: 14px; border-top: 1px solid #e0e0e0;">
-            <p style="margin-bottom: 10px;">
-                &copy; 2026 Roberto Luiz Souza Monteiro. All rights reserved.
-            </p>
-            <p style="margin-bottom: 10px;">
-                <a href="https://github.com/souzamonteiro/screenrecorder.git" 
-                    target="_blank"
-                    style="color: var(--primary-color); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-                    onmouseover="this.style.textDecoration='underline'"
-                    onmouseout="this.style.textDecoration='none'">
-                    <i class="fa-brands fa-github"></i>
-                    View source code on GitHub
-                </a>
-            </p>
-            <p style="font-size: 12px; opacity: 0.8;">
-                This project is licensed under the Apache 2.0 License.
-            </p>
-        </div>
     </div>
 
     <script type="module">
@@ -253,16 +223,10 @@
             // Pass locateFile so the loader finds rnnoise.wasm inside ./libs/
             const RNNoiseModule = await rnnoise({ locateFile: path => './libs/' + path });
             window.RNNoiseModule = RNNoiseModule;
-            console.log('✅ RNNoise module initialized');
-            console.log('Available functions:', {
-                create: !!RNNoiseModule._rnnoise_create,
-                destroy: !!RNNoiseModule._rnnoise_destroy,
-                process: !!RNNoiseModule._rnnoise_process_frame,
-                malloc: !!RNNoiseModule._malloc,
-                free: !!RNNoiseModule._free
-            });
+            console.log('RNNoise module initialized', !!(RNNoiseModule && RNNoiseModule._rnnoise_create));
         } catch (err) {
-            console.error('❌ Failed to initialize RNNoise module:', err);
+            console.error('Failed to initialize RNNoise module:', err);
+            // keep window.RNNoiseModule undefined so fallback logic can handle it
         }
     </script>
     
@@ -271,10 +235,12 @@
         const recordButton = document.getElementById('record');
         const pauseButton = document.getElementById('pause');
         const stopButton = document.getElementById('stop');
+        const saveButton = document.getElementById('save');
         const statusDiv = document.getElementById('status');
         const previewVideo = document.getElementById('preview');
         const fileInfoDiv = document.getElementById('file-info');
         const fileNameSpan = document.getElementById('file-name');
+        const downloadButton = document.getElementById('download');
         const audioSourceSelect = document.getElementById('audio-source');
         const micDevicesSelect = document.getElementById('mic-devices');
         const rnnoiseToggle = document.getElementById('rnnoise-toggle');
@@ -291,15 +257,11 @@
         let recordingDuration = 0;
         let rnnoiseProcessor = null;
         let scriptNode = null;
-        let currentMicSource = null;
-        let isFilterEnabled = false;
 
-        // Setup RNNoise processor for noise reduction - FIXED VERSION
+        // Setup RNNoise processor for noise reduction
         async function setupRNNoiseProcessor(sourceNode, destinationNode) {
-            console.log('🔧 Setting up RNNoise processor...');
-            
             try {
-                // Check if RNNoise module is available
+                // Wait for RNNoise module to be available
                 if (typeof window.RNNoiseModule === 'undefined') {
                     console.warn('RNNoise module not loaded yet');
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -309,83 +271,82 @@
                     }
                 }
 
+                // Get the module
                 const RNNoiseModule = window.RNNoiseModule;
                 
-                // Wait for module to be ready
+                // Wait for the module to be ready
                 if (typeof RNNoiseModule.ready !== 'undefined') {
                     await RNNoiseModule.ready;
                 }
 
-                // Create RNNoise state - LIKE IN C CODE
+                // Initialize RNNoise state
                 let denoiserState = null;
+                
                 try {
-                    // First, clean up any existing state
-                    if (rnnoiseProcessor && rnnoiseProcessor.state) {
-                        try {
-                            if (RNNoiseModule._rnnoise_destroy) {
-                                RNNoiseModule._rnnoise_destroy(rnnoiseProcessor.state);
-                            }
-                        } catch(e) {}
+                    // Clean up any existing processor
+                    if (rnnoiseProcessor && rnnoiseProcessor.module && rnnoiseProcessor.pcmInputBuf) {
+                        try { rnnoiseProcessor.module._free(rnnoiseProcessor.pcmInputBuf); } catch(e){}
+                        rnnoiseProcessor.pcmInputBuf = null;
                     }
-                    
-                    // Free WASM buffers if they exist
-                    if (rnnoiseProcessor && rnnoiseProcessor.pcmInputBuf) {
-                        try { RNNoiseModule._free(rnnoiseProcessor.pcmInputBuf); } catch(e){}
+                    if (rnnoiseProcessor && rnnoiseProcessor.module && rnnoiseProcessor.pcmOutputBuf) {
+                        try { rnnoiseProcessor.module._free(rnnoiseProcessor.pcmOutputBuf); } catch(e){}
+                        rnnoiseProcessor.pcmOutputBuf = null;
                     }
-                    if (rnnoiseProcessor && rnnoiseProcessor.pcmOutputBuf) {
-                        try { RNNoiseModule._free(rnnoiseProcessor.pcmOutputBuf); } catch(e){}
+                    if (rnnoiseProcessor && rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy && rnnoiseProcessor.state) {
+                        try { rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state); } catch(e){}
                     }
-                    
-                    // Create new state - LIKE C CODE: state->rnnoise_state = rnnoise_create(NULL);
+
+                    // Create RNNoise state
                     if (RNNoiseModule._rnnoise_create) {
                         denoiserState = RNNoiseModule._rnnoise_create();
-                        console.log('✅ RNNoise state created');
+                        console.log('RNNoise state created successfully');
                     } else {
-                        console.warn('❌ RNNoise create function not found');
+                        console.warn('RNNoise create function not found');
                         return false;
                     }
                 } catch (err) {
-                    console.warn('Error creating RNNoise state:', err);
+                    console.warn('Error initializing RNNoise:', err);
                     return false;
                 }
 
                 // Create ScriptProcessorNode
                 const bufferSize = 512;
-                scriptNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+                scriptNode = audioCtx.createScriptProcessor(bufferSize, 1, 1); // MONO input/output
 
-                // Constants - SAME AS C CODE
-                const FRAME_SIZE = 480; // RNNOISE_FRAME_SIZE in C code
+                // Store references for cleanup
+                const FRAME_SIZE = 480;
                 const heap = RNNoiseModule;
+                let accBuf = new Float32Array(FRAME_SIZE);
+                let accLen = 0;
+                const processedQueue = [];
                 
-                // Allocate WASM buffers - SAME SIZE AS C CODE EXPECTS
+                // Warm-up counter (skip first frames like in C code)
+                let warmupFrames = 2;
+                let framesProcessed = 0;
+
+                // Allocate WASM buffers
                 const BUFFER_BYTE_SIZE = FRAME_SIZE * 4; // Float32 = 4 bytes
                 const pcmInputBuf = heap._malloc(BUFFER_BYTE_SIZE);
                 const pcmOutputBuf = heap._malloc(BUFFER_BYTE_SIZE);
                 
                 if (!pcmInputBuf || !pcmOutputBuf) {
-                    console.warn('Failed to allocate WASM buffers');
+                    console.warn('Failed to allocate WASM buffers for RNNoise');
                     return false;
                 }
                 
                 const pcmInputIndex = pcmInputBuf >> 2;
                 const pcmOutputIndex = pcmOutputBuf >> 2;
 
-                // Store for cleanup
+                // Store buffers and state
                 rnnoiseProcessor = { 
                     state: denoiserState, 
                     module: RNNoiseModule, 
                     pcmInputBuf, 
-                    pcmOutputBuf 
+                    pcmOutputBuf,
+                    warmupFrames: 2
                 };
 
-                // Processing state - SIMILAR TO C CODE
-                let accBuf = new Float32Array(FRAME_SIZE);
-                let accLen = 0;
-                let processedQueue = [];
-                let warmupFrames = 2; // Like C code: static bool first_frame = true;
-                let framesProcessed = 0;
-
-                // Audio processing callback - FIXED VERSION
+                // Process audio frames
                 scriptNode.onaudioprocess = (event) => {
                     const input = event.inputBuffer.getChannelData(0);
                     const output = event.outputBuffer.getChannelData(0);
@@ -396,71 +357,62 @@
                         while (inPos < input.length) {
                             const need = FRAME_SIZE - accLen;
                             const take = Math.min(need, input.length - inPos);
-                            
-                            // Accumulate samples
                             accBuf.set(input.subarray(inPos, inPos + take), accLen);
                             accLen += take;
                             inPos += take;
 
                             if (accLen === FRAME_SIZE) {
-                                // CRITICAL FIX: Convert audio data to match C code
-                                // C code: float_buffer[j] = (float)(l + r / 2);
-                                // This converts int16 stereo to float mono
-                                
+                                // Copy accumulated frame into WASM memory
+                                // CORREÇÃO IMPORTANTE: O RNNoise espera floats normais, não multiplicados
+                                // O código C faz: float_buffer[j] = (float)(l + r / 2); // Apenas converte
                                 const toSend = new Float32Array(FRAME_SIZE);
-                                
-                                // IMPORTANT: Web Audio API gives us float32 in range [-1, 1]
-                                // RNNoise expects float32 with int16 range [-32768, 32767]
-                                // So we need to scale like the C code does
                                 for (let t = 0; t < FRAME_SIZE; t++) {
-                                    toSend[t] = accBuf[t] * 32768.0; // Scale to int16 range
+                                    // Apenas copia o valor float (que já está no range -1.0 a 1.0)
+                                    toSend[t] = accBuf[t];
                                 }
                                 
-                                // Copy to WASM memory
                                 heap.HEAPF32.set(toSend, pcmInputIndex);
 
-                                // Process frame - LIKE C CODE: rnnoise_process_frame(state->rnnoise_state, output_buffer, float_buffer);
+                                // Process frame through RNNoise
                                 heap._rnnoise_process_frame(denoiserState, pcmOutputBuf, pcmInputBuf);
 
-                                // Get processed data
+                                // Get processed data back
                                 const processed = new Float32Array(FRAME_SIZE);
                                 processed.set(heap.HEAPF32.subarray(pcmOutputIndex, pcmOutputIndex + FRAME_SIZE));
 
-                                // Apply clipping and scaling back - LIKE C CODE
-                                const RNNOISE_GAIN = 0.95; // Same as C demo
+                                // Apply clipping similar to C code
                                 for (let k = 0; k < processed.length; k++) {
-                                    let s = processed[k] * RNNOISE_GAIN / 32768.0; // Scale back to [-1, 1]
+                                    let s = processed[k];
                                     if (s > 1.0) s = 1.0;
                                     else if (s < -1.0) s = -1.0;
                                     processed[k] = s;
                                 }
 
-                                // Skip first frames for warm-up - LIKE C CODE
+                                // Skip first frames for warm-up (como no código C)
                                 framesProcessed++;
                                 if (framesProcessed > warmupFrames) {
                                     processedQueue.push(processed);
                                 } else {
-                                    // During warm-up, pass through original audio (not silence)
-                                    processedQueue.push(accBuf.slice());
+                                    // During warm-up, push silence or original audio
+                                    processedQueue.push(new Float32Array(FRAME_SIZE).fill(0));
                                 }
                                 
                                 accLen = 0;
                             }
                         }
                     } catch (err) {
-                        console.warn('Error in RNNoise processing:', err);
+                        console.warn('Error during denoising:', err);
                         accLen = 0;
                         processedQueue.length = 0;
                     }
 
-                    // Fill output buffer
+                    // Fill output from processedQueue
                     let outPos = 0;
                     while (outPos < output.length) {
                         if (processedQueue.length > 0) {
                             const blk = processedQueue[0];
                             const take = Math.min(blk.length, output.length - outPos);
                             output.set(blk.subarray(0, take), outPos);
-                            
                             if (take < blk.length) {
                                 processedQueue[0] = blk.subarray(take);
                             } else {
@@ -468,99 +420,20 @@
                             }
                             outPos += take;
                         } else {
-                            // No processed data - output silence temporarily
-                            for (let i = outPos; i < output.length; i++) {
-                                output[i] = 0;
-                            }
+                            // No processed data available: output silence
+                            output.fill(0, outPos);
                             break;
                         }
                     }
                 };
 
-                // Connect nodes
-                sourceNode.disconnect();
                 sourceNode.connect(scriptNode);
                 scriptNode.connect(destinationNode);
                 
-                isFilterEnabled = true;
-                console.log('✅ RNNoise processor setup complete');
+                console.log('RNNoise processor setup complete');
                 return true;
-                
             } catch (error) {
-                console.error('❌ Failed to setup RNNoise:', error);
-                return false;
-            }
-        }
-
-        // Disable RNNoise filter and connect audio directly
-        function disableRNNoiseFilter() {
-            console.log('🔧 Disabling RNNoise filter...');
-            
-            try {
-                if (currentMicSource && audioDestination) {
-                    // Disconnect everything
-                    if (scriptNode) {
-                        try {
-                            scriptNode.disconnect();
-                        } catch(e) {}
-                        scriptNode = null;
-                    }
-                    
-                    // Clean up RNNoise state
-                    if (rnnoiseProcessor && rnnoiseProcessor.state) {
-                        try {
-                            if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy) {
-                                rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state);
-                            }
-                        } catch(e) {}
-                        rnnoiseProcessor.state = null;
-                    }
-                    
-                    // Connect directly
-                    currentMicSource.disconnect();
-                    currentMicSource.connect(audioDestination);
-                    
-                    isFilterEnabled = false;
-                    console.log('✅ RNNoise filter disabled');
-                    return true;
-                }
-            } catch (error) {
-                console.error('Error disabling filter:', error);
-            }
-            return false;
-        }
-
-        // Toggle filter during recording
-        async function toggleFilterDuringRecording(enable) {
-            if (!currentMicSource || !audioDestination) {
-                console.warn('No active audio source for filter toggle');
-                return false;
-            }
-            
-            const wasRecording = mediaRecorder && mediaRecorder.state === 'recording';
-            
-            try {
-                if (wasRecording) {
-                    mediaRecorder.pause();
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-                
-                if (enable) {
-                    await setupRNNoiseProcessor(currentMicSource, audioDestination);
-                } else {
-                    disableRNNoiseFilter();
-                }
-                
-                if (wasRecording) {
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                    mediaRecorder.resume();
-                }
-                
-                statusDiv.textContent = `Recording... (Noise filter ${enable ? 'enabled' : 'disabled'})`;
-                return true;
-                
-            } catch (error) {
-                console.error('Error toggling filter:', error);
+                console.error('Failed to setup RNNoise:', error);
                 return false;
             }
         }
@@ -568,18 +441,23 @@
         // Populate microphone devices
         async function populateMicDevices() {
             try {
+                // First enumerate devices
                 let devices = await navigator.mediaDevices.enumerateDevices();
                 let mics = devices.filter(d => d.kind === 'audioinput');
 
+                // If labels are empty (permissions not granted), request audio permission briefly
                 const haveLabels = mics.some(m => m.label && m.label.trim() !== '');
                 if (!haveLabels) {
                     try {
                         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        // stop temporary tracks immediately
                         tempStream.getTracks().forEach(t => t.stop());
+                        // re-enumerate to get labels
                         devices = await navigator.mediaDevices.enumerateDevices();
                         mics = devices.filter(d => d.kind === 'audioinput');
                     } catch (permErr) {
-                        console.warn('Microphone permission not granted:', permErr);
+                        // user denied or no mic — we'll show fallbacks
+                        console.warn('Permission for microphone not granted:', permErr);
                     }
                 }
 
@@ -587,12 +465,19 @@
                 mics.forEach(mic => {
                     const opt = document.createElement('option');
                     opt.value = mic.deviceId;
-                    opt.textContent = mic.label && mic.label.trim() !== '' ? 
-                        mic.label : `Microphone (${mic.deviceId ? mic.deviceId.slice(0,6) : 'unknown'})`;
+                    // Use label if available, otherwise show a clear fallback
+                    if (mic.label && mic.label.trim() !== '') {
+                        opt.textContent = mic.label;
+                    } else {
+                        opt.textContent = `Microphone (${mic.deviceId ? mic.deviceId.slice(0,6) : 'unknown'})`;
+                    }
                     micDevicesSelect.appendChild(opt);
                 });
-                
-                micDevicesSelect.classList.toggle('hidden', mics.length === 0);
+                if (mics.length > 0) {
+                    micDevicesSelect.classList.remove('hidden');
+                } else {
+                    micDevicesSelect.classList.add('hidden');
+                }
             } catch (err) {
                 console.warn('Could not enumerate devices:', err);
             }
@@ -601,94 +486,101 @@
         // Get user media (screen, audio)
         async function getScreenStream() {
             try {
-                const audioChoice = audioSourceSelect.value;
+                // Determine audio selection
+                const audioChoice = audioSourceSelect ? audioSourceSelect.value : 'none';
                 const needsSystem = (audioChoice === 'system' || audioChoice === 'mic+system');
                 const needsMic = (audioChoice === 'microphone' || audioChoice === 'mic+system');
 
-                // Request display stream
+                // Request display stream; only request audio if system audio is wanted
                 const displayStream = await navigator.mediaDevices.getDisplayMedia({
                     video: { cursor: "always" },
                     audio: needsSystem
                 });
 
-                // Get microphone if requested
+                // Try to get microphone audio only if requested
                 micStream = null;
                 if (needsMic) {
                     try {
                         const micConstraint = {};
-                        if (micDevicesSelect.value) {
+                        if (micDevicesSelect && micDevicesSelect.value) {
                             micConstraint.deviceId = { exact: micDevicesSelect.value };
                         }
                         micStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraint });
                     } catch (err) {
-                        console.warn('Microphone not available:', err);
+                        micStream = null;
+                        console.warn('Microphone not available or permission denied:', err);
                     }
                 }
 
+                // Keep a ref to the original display stream so we can stop tracks later
                 displayStreamRef = displayStream;
+
+                // Mix audio sources using Web Audio API to avoid artifacts from multiple audio tracks
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 audioDestination = audioCtx.createMediaStreamDestination();
 
-                // Connect system audio if needed
+                // If system/display audio requested and available, connect it
                 if (needsSystem && displayStream.getAudioTracks().length > 0) {
                     try {
-                        const displayAudioSrc = audioCtx.createMediaStreamSource(
-                            new MediaStream(displayStream.getAudioTracks())
-                        );
+                        const displayAudioSrc = audioCtx.createMediaStreamSource(new MediaStream(displayStream.getAudioTracks()));
                         displayAudioSrc.connect(audioDestination);
                     } catch (err) {
-                        console.warn('Could not connect system audio:', err);
+                        console.warn('Could not create display audio source for mixing:', err);
                     }
                 }
 
-                // Connect microphone with optional RNNoise filter
+                // If microphone requested and available, connect it
                 if (micStream && micStream.getAudioTracks().length > 0) {
                     try {
-                        currentMicSource = audioCtx.createMediaStreamSource(
-                            new MediaStream(micStream.getAudioTracks())
-                        );
+                        const micAudioSrc = audioCtx.createMediaStreamSource(new MediaStream(micStream.getAudioTracks()));
                         
+                        // Apply RNNoise filter if enabled
                         if (rnnoiseToggle.checked) {
-                            const success = await setupRNNoiseProcessor(currentMicSource, audioDestination);
-                            if (!success) {
-                                console.warn('RNNoise failed, using direct connection');
-                                currentMicSource.connect(audioDestination);
+                            try {
+                                const success = await setupRNNoiseProcessor(micAudioSrc, audioDestination);
+                                if (!success) {
+                                    console.warn('RNNoise setup failed, using unfiltered audio');
+                                    micAudioSrc.connect(audioDestination);
+                                }
+                            } catch (err) {
+                                console.warn('RNNoise setup error, using unfiltered audio:', err);
+                                micAudioSrc.connect(audioDestination);
                             }
                         } else {
-                            currentMicSource.connect(audioDestination);
+                            micAudioSrc.connect(audioDestination);
                         }
                     } catch (err) {
-                        console.warn('Could not connect microphone:', err);
+                        console.warn('Could not create mic audio source for mixing:', err);
                     }
                 }
 
-                // Create final stream
-                const combinedTracks = [
-                    ...displayStream.getVideoTracks(),
-                    ...audioDestination.stream.getAudioTracks()
-                ];
+                // Combine video tracks from display + single mixed audio track from audioDestination
+                const combinedTracks = [ ...displayStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks() ];
                 stream = new MediaStream(combinedTracks);
 
-                // Setup media recorder
-                mediaRecorder = new MediaRecorder(stream, { 
-                    mimeType: 'video/webm;codecs=vp9', 
-                    audioBitsPerSecond: 128000 
-                });
+                // Set up media recorder with higher audio bitrate
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', audioBitsPerSecond: 128000 });
                 
+                // Event handlers
                 mediaRecorder.ondataavailable = handleDataAvailable;
                 mediaRecorder.onstop = handleStop;
+
+                // Start the media recorder
                 mediaRecorder.start();
 
-                // Update status
+                // Inform about audio sources
                 if (needsMic && micStream) {
-                    statusDiv.textContent = `Recording... (Microphone, Filter ${rnnoiseToggle.checked ? 'ON' : 'OFF'})`;
-                } else if (needsSystem) {
-                    statusDiv.textContent = 'Recording... (System audio)';
-                } else {
-                    statusDiv.textContent = 'Recording... (No audio)';
+                    statusDiv.textContent = 'Recording... (including microphone)';
+                } else if (needsSystem && displayStream.getAudioTracks().length > 0) {
+                    statusDiv.textContent = 'Recording... (including system/tab audio)';
+                } else if (needsMic && !micStream && !needsSystem) {
+                    statusDiv.textContent = 'Recording... (microphone requested but not available)';
                 }
 
-                // Start preview
+                // Start recording time
+                recordingStartTime = Date.now();
+                
+                // Start preview (muted to prevent feedback/microphony)
                 previewVideo.srcObject = stream;
                 previewVideo.muted = true;
                 previewVideo.play();
@@ -698,8 +590,11 @@
                 recordButton.disabled = true;
                 pauseButton.disabled = false;
                 stopButton.disabled = false;
+                // preserve any earlier status text (which may include mic/system audio info)
+                if (!statusDiv.textContent || statusDiv.textContent.trim() === 'Click Record to start') {
+                    statusDiv.textContent = 'Recording...';
+                }
                 statusDiv.classList.add('recording');
-                recordingStartTime = Date.now();
                 
             } catch (error) {
                 console.error('Error accessing screen:', error);
@@ -716,62 +611,66 @@
 
         // Stop recording
         function handleStop() {
-            // Stop all tracks
+            // Stop all tracks in the recorded stream
             if (stream) stream.getTracks().forEach(track => track.stop());
+            // Also stop mic stream if we kept a separate reference
             if (micStream) micStream.getTracks().forEach(track => track.stop());
+            // Stop display stream tracks (video/audio) if we have a ref
             if (displayStreamRef) displayStreamRef.getTracks().forEach(track => track.stop());
-            
-            // Clean up RNNoise
+            // Clean up RNNoise processor
             if (rnnoiseProcessor) {
-                try {
+                try { 
                     if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy && rnnoiseProcessor.state) {
                         rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state);
                     }
                 } catch(e){}
                 rnnoiseProcessor = null;
             }
-            
-            // Clean up audio nodes
+            // Clean up script node
             if (scriptNode) {
-                try { scriptNode.disconnect(); } catch(e){}
+                try {
+                    scriptNode.disconnect();
+                } catch(e){}
                 scriptNode = null;
             }
-            
+            // Close AudioContext used for mixing
             if (audioCtx) {
                 try { audioCtx.close(); } catch(e){}
                 audioCtx = null;
                 audioDestination = null;
             }
             
-            currentMicSource = null;
-            isFilterEnabled = false;
+            // Create a blob from recorded chunks
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
             
-            // Create and save file
-            if (recordedChunks.length > 0) {
-                const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const file = new File([blob], `recording-${new Date().toISOString().slice(0, 19)}.webm`);
-                const url = URL.createObjectURL(blob);
-                
-                fileNameSpan.textContent = file.name;
-                fileInfoDiv.classList.remove('hidden');
-                
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = file.name;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
+            // Create a file and URL for download
+            const file = new File([blob], `screen-recording-${new Date().toISOString().slice(0, 19)}.webm`);
+            const url = URL.createObjectURL(blob);
+            
+            // Display file info
+            fileNameSpan.textContent = file.name;
+            fileInfoDiv.classList.remove('hidden');
+            
+            // Set file URL for download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
             
             // Reset UI
             recordButton.disabled = false;
             pauseButton.disabled = true;
             stopButton.disabled = true;
             statusDiv.textContent = 'Recording saved!';
-            statusDiv.classList.remove('recording', 'paused');
             statusDiv.classList.add('saved');
+            // Reset pause button label and classes
             pauseButton.textContent = 'Pause';
+            statusDiv.classList.remove('recording', 'paused');
+
+            // Reset recorded chunks
             recordedChunks = [];
         }
 
@@ -780,13 +679,17 @@
             if (!mediaRecorder) return;
 
             if (mediaRecorder.state === 'recording') {
-                recordingDuration += Date.now() - recordingStartTime;
+                // Calculate duration paused
+                const pausedDuration = Date.now() - recordingStartTime;
+                recordingDuration += pausedDuration;
+
                 mediaRecorder.pause();
                 statusDiv.textContent = 'Recording paused';
                 statusDiv.classList.remove('recording');
                 statusDiv.classList.add('paused');
                 pauseButton.textContent = 'Resume';
             } else if (mediaRecorder.state === 'paused') {
+                // Resume recording
                 recordingStartTime = Date.now();
                 mediaRecorder.resume();
                 statusDiv.textContent = 'Recording...';
@@ -806,48 +709,38 @@
             }
         });
 
-        audioSourceSelect.addEventListener('change', async () => {
-            const val = audioSourceSelect.value;
-            if (val === 'microphone' || val === 'mic+system') {
-                await populateMicDevices();
-                micDevicesSelect.classList.remove('hidden');
-            } else {
-                micDevicesSelect.classList.add('hidden');
-            }
-        });
+        // Show/hide mic device select based on audio choice
+        if (audioSourceSelect) {
+            audioSourceSelect.addEventListener('change', async () => {
+                const val = audioSourceSelect.value;
+                if ((val === 'microphone' || val === 'mic+system')) {
+                    await populateMicDevices();
+                    micDevicesSelect.classList.remove('hidden');
+                } else {
+                    micDevicesSelect.classList.add('hidden');
+                }
+            });
+            // initial populate
+            populateMicDevices();
+        }
 
         pauseButton.addEventListener('click', pauseRecording);
 
         stopButton.addEventListener('click', () => {
             if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+                // Stop recording and fire the onstop event
                 mediaRecorder.stop();
             }
         });
 
-        // Toggle filter during recording
-        rnnoiseToggle.addEventListener('change', async () => {
-            if (currentMicSource && audioDestination) {
-                const enabled = rnnoiseToggle.checked;
-                console.log(`🎚️ Toggling noise filter: ${enabled ? 'ON' : 'OFF'}`);
-                
-                if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
-                    await toggleFilterDuringRecording(enabled);
-                } else {
-                    // Update status for next recording
-                    statusDiv.textContent = `Filter will be ${enabled ? 'enabled' : 'disabled'} on next recording`;
-                }
-            }
-        });
-
-        // Initial population
-        populateMicDevices();
-
         // Clean up on page unload
         window.addEventListener('beforeunload', () => {
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            if (rnnoiseProcessor && rnnoiseProcessor.state) {
-                try {
-                    if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy) {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (rnnoiseProcessor) {
+                try { 
+                    if (rnnoiseProcessor.module && rnnoiseProcessor.module._rnnoise_destroy && rnnoiseProcessor.state) {
                         rnnoiseProcessor.module._rnnoise_destroy(rnnoiseProcessor.state);
                     }
                 } catch(e){}
@@ -859,14 +752,6 @@
                 try { audioCtx.close(); } catch(e){}
             }
         });
-    </script>
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(() => console.log('Service Worker successfully registered.'))
-            .catch(err => console.error('Erro SW:', err));
-        }
     </script>
 </body>
 </html>

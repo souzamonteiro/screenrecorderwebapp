@@ -3,18 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#1a2a6c">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="mobile-web-app-capable" content="yes">
     <title>Screen Recorder</title>
-    <link rel="icon" href="icons/favicon.ico" type="image/x-icon">
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-152x152.png">
-
-    <!-- CSS Libraries -->
-    <link rel="stylesheet" href="css/fontawesome.min.css">
-    
     <style>
         * {
             margin: 0;
@@ -223,25 +212,6 @@
         </div>
         <div class="file-info hidden" id="file-info">
             <p>Recording saved as <span id="file-name"></span></p>
-        </div>
-
-        <div style="margin-top: 40px; padding: 20px; text-align: center; color: var(--dark-gray); font-size: 14px; border-top: 1px solid #e0e0e0;">
-            <p style="margin-bottom: 10px;">
-                &copy; 2026 Roberto Luiz Souza Monteiro. All rights reserved.
-            </p>
-            <p style="margin-bottom: 10px;">
-                <a href="https://github.com/souzamonteiro/screenrecorder.git" 
-                    target="_blank"
-                    style="color: var(--primary-color); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;"
-                    onmouseover="this.style.textDecoration='underline'"
-                    onmouseout="this.style.textDecoration='none'">
-                    <i class="fa-brands fa-github"></i>
-                    View source code on GitHub
-                </a>
-            </p>
-            <p style="font-size: 12px; opacity: 0.8;">
-                This project is licensed under the Apache 2.0 License.
-            </p>
         </div>
     </div>
 
@@ -859,14 +829,6 @@
                 try { audioCtx.close(); } catch(e){}
             }
         });
-    </script>
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(() => console.log('Service Worker successfully registered.'))
-            .catch(err => console.error('Erro SW:', err));
-        }
     </script>
 </body>
 </html>
