@@ -117,16 +117,18 @@
             margin-top: 20px;
             width: 100%;
             height: 200px;
-            background-color: #f0f0f0;
+            background-color: #000; /* letterbox background */
             border-radius: 8px;
             overflow: hidden;
             position: relative;
+            display: none;
         }
 
         .preview video {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: contain; /* 🔑 keeps aspect ratio */
+            background-color: #000;
         }
 
         .file-info {
@@ -264,7 +266,7 @@
             console.error('❌ Failed to initialize RNNoise module:', err);
         }
     </script>
-    
+
     <script>
         // DOM elements
         const recordButton = document.getElementById('record');
@@ -272,6 +274,7 @@
         const stopButton = document.getElementById('stop');
         const statusDiv = document.getElementById('status');
         const previewVideo = document.getElementById('preview');
+        const previewContainer = document.querySelector('.preview'); // Added this line
         const fileInfoDiv = document.getElementById('file-info');
         const fileNameSpan = document.getElementById('file-name');
         const audioSourceSelect = document.getElementById('audio-source');
@@ -687,11 +690,12 @@
                     statusDiv.textContent = 'Recording... (No audio)';
                 }
 
-                // Start preview
+                // FIXED PREVIEW: Show the container and video
+                previewContainer.style.display = 'block'; // This was missing!
                 previewVideo.srcObject = stream;
                 previewVideo.muted = true;
-                previewVideo.play();
                 previewVideo.classList.remove('hidden');
+                previewVideo.play().catch(err => console.log('Preview autoplay prevented:', err));
                 
                 // Update UI
                 recordButton.disabled = true;
@@ -715,6 +719,11 @@
 
         // Stop recording
         function handleStop() {
+            // FIXED: Hide preview when stopping
+            previewContainer.style.display = 'none';
+            previewVideo.srcObject = null;
+            previewVideo.classList.add('hidden');
+            
             // Stop all tracks
             if (stream) stream.getTracks().forEach(track => track.stop());
             if (micStream) micStream.getTracks().forEach(track => track.stop());
